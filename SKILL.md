@@ -18,7 +18,9 @@ description: >
 ## Non-Negotiable Contract
 
 - Backend: knowledge graph only (Neo4j driver)
-- Config file: `scripts/config-full.env` only
+- Runtime config file: `scripts/config-full.env` only
+  - Create it from `scripts/config-full.templete.env`
+  - Keep `config-full.env` local; do not commit
 - Embedding mode: auto
   - `EMBED_MODEL_PATH` exists -> local llama.cpp embedding
   - otherwise -> API embedding
@@ -80,9 +82,10 @@ sudo systemctl start neo4j
 
 pip install graphiti-core[neo4j] openai pydantic
 
-# edit config
+# create local runtime config from template
 cd "$baseDir/scripts"
-# edit config-full.env
+cp config-full.templete.env config-full.env
+# edit config-full.env (local only; do not commit)
 
 openclaw plugins install --link "$baseDir"
 openclaw gateway restart

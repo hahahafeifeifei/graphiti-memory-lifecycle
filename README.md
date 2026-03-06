@@ -5,6 +5,8 @@ Use this skill for the full OpenClaw Graphiti memory lifecycle: memory generatio
 ## Setup Tutorial
 
 ```bash
+baseDir=~/.openclaw/workspace/skills/graphiti-memory-lifecycle
+
 # 1) Install and start Neo4j (example: Ubuntu/Debian)
 sudo apt-get update
 sudo apt-get install -y neo4j
@@ -15,11 +17,12 @@ sudo systemctl start neo4j
 pip install graphiti-core[neo4j] openai pydantic
 
 # 3) Configure environment
-cd ~/.openclaw/workspace/skills/graphiti-memory-lifecycle/scripts
-# edit config-full.env directly
+cd "$baseDir/scripts"
+cp config-full.templete.env config-full.env
+# edit config-full.env (local secrets file, do not commit)
 
 # 4) Install plugin and restart gateway
-openclaw plugins install --link ~/.openclaw/workspace/skills/graphiti-memory-lifecycle
+openclaw plugins install --link "$baseDir"
 openclaw gateway restart
 
 # 5) Start graph memory server
@@ -27,7 +30,7 @@ python3 graphiti-server.py --daemon
 
 # 6) Configure daily cron job (03:00 every day)
 openclaw cron add --name graphiti-sync --schedule "0 3 * * *" \
-  --command "python3 ~/.openclaw/workspace/skills/graphiti-memory-lifecycle/scripts/graphiti-daily-sync.py"
+  --command "python3 $baseDir/scripts/graphiti-daily-sync.py"
 ```
 
 ## Lifecycle (Memory Flow)
@@ -66,27 +69,25 @@ openclaw cron add --name graphiti-sync --schedule "0 3 * * *" \
 │ - FACTS/ENTITIES recall text from graph                             │
 │ - recall context injected into current request                      │
 └──────────────────────────────────────────────────────────────────────┘
-                                 │
-                                 └────────────── loops back to [0]
 ```
 
 ### Step-by-step Details
 
-1. Capture raw memory (extraction stage)  
-The hook event provides conversation context from `sessions/*.jsonl`.  
-`scripts/graphiti_hook_capture.py` extracts memory candidates and appends them into `memory/YYYY-MM-DD.md` by date.  
-At the same time, it regenerates `NOW.md` from the built-in default template, so runtime injection always has a fresh short summary.
+1. Capture raw memory (extraction stage)
+- The hook event provides conversation context from `sessions/*.jsonl`.
+- `scripts/graphiti_hook_capture.py` extracts memory candidates and appends them into `memory/YYYY-MM-DD.md` by date.
+- The same step also regenerates `NOW.md` from the built-in default template.
 
-2. Distill and ingest (daily stage)  
-`scripts/graphiti-daily-sync.py` orchestrates three actions in order:
-- `scripts/graphiti-add-memory.py`: reads raw daily memory, normalizes and distills into typed files, ingests structured episodes/facts/entities into Neo4j, and promotes broadly applicable prompts by reflecting on the current day's typed distilled files.
-- `scripts/graphiti-add-skill.py --all`: ingests skill documentation and updates skill-related graph memory.
-- `scripts/graphiti-cold-archive.py`: archives old low-value graph memory based on age and query-frequency thresholds.
+2. Distill and ingest (daily stage)
+- `scripts/graphiti-daily-sync.py` orchestrates three actions in order.
+- `scripts/graphiti-add-memory.py` reads raw daily memory, distills it into typed files, ingests structured episodes/facts/entities into Neo4j, and promotes workspace prompts from the current day's typed distilled files.
+- `scripts/graphiti-add-skill.py --all` ingests skill documentation and updates skill-related graph memory.
+- `scripts/graphiti-cold-archive.py` archives old low-value graph memory based on age and query-frequency thresholds.
 
-3. Recall for each turn (runtime stage)  
-At `before_agent_start`, `index.js` requests recall from `scripts/graphiti-server.py`.  
-The server queries Neo4j/Graphiti and returns formatted FACTS/ENTITIES text.  
-`index.js` injects this recall text into the request context for the current model turn.
+3. Recall for each turn (runtime stage)
+- At `before_agent_start`, `index.js` requests recall from `scripts/graphiti-server.py`.
+- The server queries Neo4j/Graphiti and returns formatted FACTS/ENTITIES text.
+- `index.js` injects this recall text into the current request context.
 
 ## Memory Types
 
@@ -122,6 +123,17 @@ The server queries Neo4j/Graphiti and returns formatted FACTS/ENTITIES text.
 | `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` | Extraction / distill LLM |
 | `OPENAI_API_KEY` | Compatibility for graphiti-core internal client |
 
+### Config file bootstrap
+
+Create local runtime config from the template:
+
+```bash
+cd ~/.openclaw/workspace/skills/graphiti-memory-lifecycle/scripts
+cp config-full.templete.env config-full.env
+```
+
+`config-full.env` is local runtime config and should not be committed.
+
 ### Embedding auto-mode keys
 
 `conf.py` uses unified embedding keys and auto-detects mode:
@@ -135,7 +147,7 @@ Keys:
 ### Tunable env variables (kept intentionally small)
 
 | Variable | Default | Scope |
-|---|---:|---|
+|---|---|---|
 | `GRAPHITI_RECALL_LIMIT` | `5` | recall result count |
 | `GRAPHITI_ARCHIVE_MIN_AGE_DAYS` | `30` | cold archive min age |
 | `GRAPHITI_ARCHIVE_MAX_QUERY_RATE` | `3` | cold archive low-frequency threshold |
