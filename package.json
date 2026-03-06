@@ -1,0 +1,11 @@
+{
+  "name": "graphiti-memory-lifecycle",
+  "version": "0.5.0",
+  "description": "Hook-driven Graphiti memory plugin for OpenClaw with NOW lifecycle recall and distilled-memory import",
+  "type": "module",
+  "main": "index.js",
+  "keywords": ["openclaw", "plugin", "memory", "rag", "graphiti", "knowledge-graph", "neo4j", "llama-cpp"],
+  "openclaw": {
+    "extensions": ["./index.js"]
+  }
+}

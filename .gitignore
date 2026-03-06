@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+runtime/
+scripts/__pycache__/
+scripts/config-full.env

@@ -1,0 +1,29 @@
+{
+  "id": "graphiti-memory-lifecycle",
+  "name": "Graphiti Memory Lifecycle RAG",
+  "description": "Hook-driven graph memory with NOW recall + Graphiti recall",
+  "version": "0.5.0",
+  "type": "extension",
+  "main": "./index.js",
+  "hooks": [
+    "before_agent_start",
+    "before_compaction",
+    "after_compaction",
+    "before_reset",
+    "session_start"
+  ],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "maxResults": { "type": "number", "default": 5 },
+      "maxContextChars": { "type": "number", "default": 5000 },
+      "timeoutMs": { "type": "number", "default": 600000 },
+      "logInjections": { "type": "boolean", "default": true },
+      "skipShortPrompts": { "type": "number", "default": 10 },
+      "socketPath": { "type": "string", "default": "/root/.openclaw/workspace/skills/graphiti-memory-lifecycle/runtime/graphiti-recall.sock" },
+      "captureNowEnabled": { "type": "boolean", "default": true },
+      "nowFilePath": { "type": "string", "default": "NOW.md" }
+    }
+  }
+}
