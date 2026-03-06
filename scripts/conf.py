@@ -94,6 +94,7 @@ from graphiti_core.llm_client.config import LLMConfig
 from graphiti_core.llm_client.errors import RateLimitError
 
 _logger = logging.getLogger(__name__)
+DEFAULT_LLM_MAX_TOKENS = 65536
 
 class JsonLLMClient(LLMClient):
     """Prompt-based JSON client for OpenAI-compatible chat APIs."""
@@ -102,7 +103,7 @@ class JsonLLMClient(LLMClient):
         self.client = AsyncOpenAI(api_key=config.api_key, base_url=config.base_url)
         self.model = config.model
 
-    async def _generate_response(self, messages, response_model=None, max_tokens=32768, **kw):
+    async def _generate_response(self, messages, response_model=None, max_tokens=DEFAULT_LLM_MAX_TOKENS, **kw):
         msgs = []
         for m in messages:
             c = m.content
@@ -121,7 +122,11 @@ class JsonLLMClient(LLMClient):
 
     async def generate_response(self, messages, response_model=None, max_tokens=None, **kw):
         try:
-            result = await self._generate_response(messages, response_model, max_tokens or 32768)
+            result = await self._generate_response(
+                messages,
+                response_model,
+                max_tokens or DEFAULT_LLM_MAX_TOKENS,
+            )
             if response_model:
                 try:
                     return response_model(**result).model_dump()
