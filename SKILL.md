@@ -66,14 +66,15 @@ So this socket is not optional unless client/server architecture is rewritten.
 2. Required config keys (`scripts/config-full.env`)
 - `GRAPHITI_GROUP_ID`, `MEMORY_DIR`, `WORKSPACE_DIR`
 - Knowledge-graph connection keys: `NEO4J_URI`, `NEO4J_USER`, `NEO4J_AUTH_ENABLED`, `NEO4J_PASSWORD`
-- `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`, `OPENAI_API_KEY`
+- `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`
+- `OPENAI_API_KEY` is optional (auto-derived from `LLM_API_KEY` by `scripts/conf.py`)
 - `GRAPHITI_RECALL_LIMIT`, `GRAPHITI_ARCHIVE_MIN_AGE_DAYS`, `GRAPHITI_ARCHIVE_MAX_QUERY_RATE`
 - `EMBED_MODEL_PATH`, `EMBED_DIMS`, `EMBED_BASE_URL`, `EMBED_ENDPOINT`, `EMBED_MODEL`, `EMBED_API_KEY`, `EMBED_TIMEOUT`
 
 ## Bootstrap (If Environment Is New)
 
 ```bash
-baseDir=~/.openclaw/workspace/skills/graphiti-memory-lifecycle
+baseDir=${HOME}/.openclaw/workspace/skills/graphiti-memory-lifecycle
 
 sudo apt-get update
 sudo apt-get install -y neo4j

@@ -21,7 +21,7 @@
       "timeoutMs": { "type": "number", "default": 600000 },
       "logInjections": { "type": "boolean", "default": true },
       "skipShortPrompts": { "type": "number", "default": 10 },
-      "socketPath": { "type": "string", "default": "/root/.openclaw/workspace/skills/graphiti-memory-lifecycle/runtime/graphiti-recall.sock" },
+      "socketPath": { "type": "string", "default": "${HOME}/.openclaw/workspace/skills/graphiti-memory-lifecycle/runtime/graphiti-recall.sock" },
       "captureNowEnabled": { "type": "boolean", "default": true },
       "nowFilePath": { "type": "string", "default": "NOW.md" }
     }

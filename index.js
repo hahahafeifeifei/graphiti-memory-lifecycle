@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 
 const SKILL_DIR = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_SOCKET_PATH = join(SKILL_DIR, 'runtime', 'graphiti-recall.sock');
+const HOME_DIR = process.env.HOME || '/root';
 
 const DEFAULTS = {
   maxResults: 5,
@@ -37,12 +38,21 @@ function resolveWorkspaceDir(ctx) {
   if (ctx?.workspaceDir && typeof ctx.workspaceDir === 'string') {
     return ctx.workspaceDir;
   }
-  return '/root/.openclaw/workspace';
+  return join(HOME_DIR, '.openclaw', 'workspace');
+}
+
+function expandEnvPath(inputPath) {
+  if (!inputPath || typeof inputPath !== 'string') return inputPath;
+  let out = inputPath.replaceAll('${HOME}', HOME_DIR);
+  if (out === '~') return HOME_DIR;
+  if (out.startsWith('~/')) return join(HOME_DIR, out.slice(2));
+  return out;
 }
 
 function resolvePath(inputPath, workspaceDir) {
-  if (!inputPath || typeof inputPath !== 'string') return null;
-  return isAbsolute(inputPath) ? inputPath : join(workspaceDir, inputPath);
+  const expanded = expandEnvPath(inputPath);
+  if (!expanded || typeof expanded !== 'string') return null;
+  return isAbsolute(expanded) ? expanded : join(workspaceDir, expanded);
 }
 
 function getSessionId(event, ctx) {
@@ -272,6 +282,7 @@ export default {
 
   register(api) {
     const config = { ...DEFAULTS, ...api.pluginConfig };
+    config.socketPath = expandEnvPath(config.socketPath);
     const logger = api.logger;
 
     logger.info(

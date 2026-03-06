@@ -54,6 +54,8 @@ WORKSPACE_DIR  = os.path.expanduser(_r("WORKSPACE_DIR"))
 LLM_API_KEY    = _r("LLM_API_KEY")
 LLM_BASE_URL   = _r("LLM_BASE_URL")
 LLM_MODEL      = _r("LLM_MODEL")
+# Merge key usage: OPENAI_API_KEY defaults to LLM_API_KEY when not explicitly set.
+os.environ.setdefault("OPENAI_API_KEY", LLM_API_KEY)
 
 GRAPHITI_RECALL_LIMIT = int(_opt("GRAPHITI_RECALL_LIMIT", "5"))
 GRAPHITI_ARCHIVE_MIN_AGE_DAYS = int(_opt("GRAPHITI_ARCHIVE_MIN_AGE_DAYS", "30"))
@@ -64,7 +66,12 @@ GRAPHITI_ARCHIVE_MAX_QUERY_RATE = float(_opt("GRAPHITI_ARCHIVE_MAX_QUERY_RATE", 
 # - EMBED_MODEL_PATH exists -> local llama.cpp embedding mode
 # - otherwise -> API embedding mode
 EMBED_MODEL_PATH = os.path.expanduser(
-    _opt("EMBED_MODEL_PATH", "~/.openclaw/models/gguf/Qwen3-Embedding-0.6B-Q8_0.gguf")
+    os.path.expandvars(
+        _opt(
+            "EMBED_MODEL_PATH",
+            "${HOME}/.openclaw/models/gguf/Qwen3-Embedding-0.6B-Q8_0.gguf",
+        )
+    )
 )
 EMBED_DIMS = int(_opt("EMBED_DIMS", "512"))
 EMBED_BASE_URL = _opt("EMBED_BASE_URL", "http://127.0.0.1:8011")

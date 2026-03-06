@@ -5,7 +5,7 @@ Use this skill for the full OpenClaw Graphiti memory lifecycle: memory generatio
 ## Setup Tutorial
 
 ```bash
-baseDir=~/.openclaw/workspace/skills/graphiti-memory-lifecycle
+baseDir=${HOME}/.openclaw/workspace/skills/graphiti-memory-lifecycle
 
 # 1) Install and start Neo4j (example: Ubuntu/Debian)
 sudo apt-get update
@@ -121,18 +121,18 @@ openclaw cron add --name graphiti-sync --schedule "0 3 * * *" \
 | `GRAPHITI_GROUP_ID` | Graphiti group scope |
 | `MEMORY_DIR`, `WORKSPACE_DIR` | Memory and workspace roots |
 | `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` | Extraction / distill LLM |
-| `OPENAI_API_KEY` | Compatibility for graphiti-core internal client |
 
 ### Config file bootstrap
 
 Create local runtime config from the template:
 
 ```bash
-cd ~/.openclaw/workspace/skills/graphiti-memory-lifecycle/scripts
+cd ${HOME}/.openclaw/workspace/skills/graphiti-memory-lifecycle/scripts
 cp config-full.templete.env config-full.env
 ```
 
 `config-full.env` is local runtime config and should not be committed.
+`OPENAI_API_KEY` is auto-derived from `LLM_API_KEY` in `scripts/conf.py`.
 
 ### Embedding auto-mode keys
 
@@ -181,7 +181,7 @@ graphiti-memory-lifecycle/
 | Check server | `python3 scripts/graphiti-recall.py "health check"` |
 | Manual recall | `python3 scripts/graphiti-recall.py "<query>"` |
 | Distill one day | `python3 scripts/graphiti-add-memory.py --date YYYY-MM-DD` |
-| Sync all skills | `python3 scripts/graphiti-add-skill.py --all --skills-root ~/.openclaw/workspace/skills` |
+| Sync all skills | `python3 scripts/graphiti-add-skill.py --all --skills-root ${HOME}/.openclaw/workspace/skills` |
 | Add one resource | `python3 scripts/graphiti-add-resource.py --file <path>` |
 | Cold archive | `python3 scripts/graphiti-cold-archive.py --min-age 30 --max-query-rate 3` |
 | Full daily chain | `python3 scripts/graphiti-daily-sync.py --date YYYY-MM-DD` |

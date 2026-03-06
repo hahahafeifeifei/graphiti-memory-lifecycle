@@ -8,7 +8,7 @@ agent sees the message.
 
 ## Option A: OpenClaw Plugin (recommended)
 
-Add to `~/.openclaw/openclaw.json`:
+Add to `${HOME}/.openclaw/openclaw.json`:
 
 ```json
 {
