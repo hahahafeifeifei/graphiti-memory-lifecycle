@@ -198,6 +198,16 @@ async def do_recall(query: str, limit: int = 5) -> str:
             for item in top_items
         ],
     )
+    logger.info(
+        "Recall final output summary: %s",
+        {
+            'query_preview': query[:120],
+            'returned_items': len(top_items),
+            'facts': len(facts),
+            'entities': len(entities),
+            'top_scores': [item['score'] for item in top_items],
+        },
+    )
 
     for item in top_items:
         if item.get('uuid'):

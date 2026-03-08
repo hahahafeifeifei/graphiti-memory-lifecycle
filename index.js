@@ -373,7 +373,19 @@ export default {
         if (output) {
           blocks.push(output);
           if (config.logInjections) {
+            const previewLines = output
+              .split('\n')
+              .map((line) => line.trim())
+              .filter(Boolean)
+              .filter((line) => line.startsWith('- '))
+              .slice(0, 5);
             logger.info(`graphiti-memory-lifecycle: injecting graph recall (${output.length} chars)`);
+            logger.info(
+              `graphiti-memory-lifecycle: graph recall preview ${JSON.stringify({
+                items: previewLines.length,
+                preview: previewLines,
+              })}`
+            );
           }
         } else if (config.logInjections) {
           logger.debug('graphiti-memory-lifecycle: no graph recall results');
