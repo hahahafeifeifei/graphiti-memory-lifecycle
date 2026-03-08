@@ -83,6 +83,42 @@ WORKSPACE_TARGET_HINTS = {
     "PROJECT.md": "Ongoing project status, priorities, and stable working direction.",
     "MEMORY.md": "Other broadly useful memory not covered by other targets.",
 }
+WORKSPACE_TARGET_RULES = {
+    "SOUL.md": (
+        "Include only enduring self-concept, identity axioms, mission, and stable non-user-specific principles. "
+        "Exclude collaboration habits, permissions, runtime constraints, tool usage, user preferences, and project status."
+    ),
+    "IDENTITY.md": (
+        "Include recurring response style, collaboration habits, tone, and operating behavior. "
+        "Exclude mission-level identity, tool or model choices, user-specific facts, and project status."
+    ),
+    "TOOLS.md": (
+        "Include tool, model, provider, API, search, retrieval, debugging, timeout, cache, config, and workflow rules. "
+        "Exclude user profile facts, persona traits, and project milestones unless the line is a reusable operator rule."
+    ),
+    "USER.md": (
+        "Include only explicit facts or stable preferences about the human user: profile, goals, communication preferences, recurring requests, and hard constraints. "
+        "Exclude system status interests, tool or model choices, project state, and general operator habits unless the text clearly states an enduring user preference."
+    ),
+    "PROJECT.md": (
+        "Include current project state, recent changes, validations, migrations, incidents, priorities, milestones, and working direction for the active system. "
+        "Exclude timeless identity rules, general tool advice, and user profile facts."
+    ),
+    "MEMORY.md": (
+        "Include broadly useful residual memory that does not fit any other workspace file. "
+        "Use this as the catch-all only after rejecting SOUL, IDENTITY, TOOLS, USER, and PROJECT."
+    ),
+}
+WORKSPACE_ROUTING_GUIDE = (
+    "Routing guide:\n"
+    "- Tool names, model names, API formats, search or rerank strategy, config rules, cache rules, timeout rules, and debugging steps belong in TOOLS.md or PROJECT.md, never USER.md.\n"
+    "- System status, validation results, migrations, schedule changes, graph counts, file rewrites, and rollout state belong in PROJECT.md.\n"
+    "- Facts or preferences about the human user belong in USER.md only when they are explicit and stable.\n"
+    "- Persona, mission, and identity axioms belong in SOUL.md.\n"
+    "- Recurring tone, collaboration habits, and operating style belong in IDENTITY.md.\n"
+    "- If uncertain, drop the line instead of forcing it into the target file."
+)
+
 
 
 def _to_one_sentence(text: str) -> str:
@@ -474,6 +510,44 @@ def _normalize_bullet_lines(lines: list[str]) -> list[str]:
     return out
 
 
+def _workspace_main_content(text: str, max_lines: int = 4) -> str:
+    lines = _normalize_bullet_lines((text or "").splitlines())
+    if not lines:
+        return "(empty)"
+    compact: list[str] = []
+    for line in lines[:max_lines]:
+        item = line[2:] if line.startswith("- ") else line
+        compact.append(" ".join(item.split()))
+    return "<br>".join(compact)
+
+
+def _markdown_table_cell(text: str) -> str:
+    return (text or "").replace("|", "\\|").replace("\n", "<br>")
+
+
+def _workspace_scope_table(workspace_texts: dict[str, str], target_file: str) -> str:
+    rows = [
+        "| File | Primary scope | Routing rule | Current main content |",
+        "|---|---|---|---|",
+    ]
+    for file_name in WORKSPACE_TARGETS:
+        rows.append(
+            "| "
+            + " | ".join(
+                [
+                    _markdown_table_cell(file_name),
+                    _markdown_table_cell(WORKSPACE_TARGET_HINTS.get(file_name, "")),
+                    _markdown_table_cell(WORKSPACE_TARGET_RULES.get(file_name, "")),
+                    _markdown_table_cell(_workspace_main_content(workspace_texts.get(file_name, ""))),
+                ]
+            )
+            + " |"
+        )
+    rows.append("")
+    rows.append(f"Current target file: {target_file}")
+    return "\n".join(rows)
+
+
 def _type_daily_file(mem_type: str, date_str: str) -> Path:
     type_dir = TYPE_TO_FILE[mem_type]
     return Path(MEMORY_DIR) / type_dir / f"{type_dir}.{date_str}.md"
@@ -508,21 +582,30 @@ async def _extract_target_candidates_from_corpus(
     target_file: str,
     corpus_text: str,
     existing_text: str,
+    workspace_texts: dict[str, str],
 ) -> list[str]:
     src = (corpus_text or "").strip()
     if not src:
         return []
 
     target_hint = WORKSPACE_TARGET_HINTS.get(target_file, "Broadly useful memory.")
+    target_rule = WORKSPACE_TARGET_RULES.get(target_file, "")
+    workspace_table = _workspace_scope_table(workspace_texts, target_file)
     collected_lines: list[str] = []
     instruction = (
-        "You are building a single workspace memory file from typed distilled memory.\n"
+        "You are routing distilled memory into exactly one workspace file.\n"
         f"Target file: {target_file}\n"
-        f"Target scope: {target_hint}\n\n"
+        f"Target scope: {target_hint}\n"
+        f"Target routing rule: {target_rule}\n\n"
+        f"{WORKSPACE_ROUTING_GUIDE}\n\n"
+        "Workspace file reference table:\n"
+        f"{workspace_table}\n\n"
         "Task:\n"
         "1) Read the complete typed memory input.\n"
-        "2) Keep only high-value, broadly reusable rules for the target scope.\n"
-        "3) Avoid duplicating existing workspace bullets.\n\n"
+        "2) Keep only high-value, broadly reusable rules that belong in the target file more than any other file.\n"
+        "3) Reject lines that are a better fit for another workspace file in the table.\n"
+        "4) Avoid duplicating the target file or overlapping with other files' current main content.\n"
+        "5) Be conservative: if a line is not clearly correct for the target file, drop it.\n\n"
         "Return JSON only:\n"
         "{\n"
         '  "lines": ["Always ...", "Prefer ..."]\n'
@@ -531,7 +614,9 @@ async def _extract_target_candidates_from_corpus(
         "- max 15 lines\n"
         "- each line must be exactly one sentence\n"
         "- line length <= 120 chars\n"
-        "- no duplicates"
+        "- no duplicates\n"
+        "- if a line is ambiguous across files, drop it\n"
+        "- do not restate content already covered by another workspace file"
     )
 
     raw_list: Any = None
@@ -541,7 +626,7 @@ async def _extract_target_candidates_from_corpus(
         messages: list[dict[str, str]] = [
             {"role": "system", "content": "You output strict JSON only."},
             {"role": "user", "content": instruction},
-            {"role": "user", "content": f"Existing workspace file:\n{existing_text or '(empty)'}"},
+            {"role": "user", "content": f"Existing target file content:\n{existing_text or '(empty)'}"},
             {"role": "user", "content": src},
         ]
         if attempt > 1:
@@ -646,16 +731,20 @@ async def _synthesize_workspace_file(
     target_file: str,
     existing_text: str,
     candidate_lines: list[str],
+    workspace_texts: dict[str, str],
 ) -> str:
     if not candidate_lines and not existing_text.strip():
         return ""
 
+    workspace_table = _workspace_scope_table(workspace_texts, target_file)
     payload = json.dumps(
         {
             "existing_workspace_bullets": existing_text or "",
             "new_candidate_bullets": candidate_lines,
             "target_file": target_file,
             "target_scope": WORKSPACE_TARGET_HINTS.get(target_file, ""),
+            "target_rule": WORKSPACE_TARGET_RULES.get(target_file, ""),
+            "workspace_file_reference_table": workspace_table,
         },
         ensure_ascii=False,
     )
@@ -666,9 +755,12 @@ async def _synthesize_workspace_file(
             {
                 "role": "system",
                 "content": (
-                    "Merge existing workspace prompts with new candidate prompts.\n"
-                    "Target file and scope are provided in the JSON payload.\n"
-                    "Keep only high-value, reusable, non-duplicated lines.\n"
+                    "Merge existing workspace prompts with new candidate prompts for exactly one target file.\n"
+                    "Target file, routing rule, and the full workspace file reference table are provided in the JSON payload.\n"
+                    f"{WORKSPACE_ROUTING_GUIDE}\n\n"
+                    "Keep only high-value, reusable, non-duplicated lines that belong in the target file more than any other file.\n"
+                    "Treat existing bullets as editable, not authoritative: delete or rewrite any existing bullet that no longer fits the target rule.\n"
+                    "Drop content that overlaps with another file's current main content or fits another file better.\n"
                     "Prefer imperative guidance ('Always...', 'Prefer...', 'Avoid...').\n"
                     "Every bullet must be exactly one sentence.\n"
                     f"Hard limit: output must be < {WORKSPACE_FILE_LIMIT} bytes UTF-8.\n"
@@ -701,21 +793,34 @@ async def promote_workspace(date_str: str) -> dict[str, int]:
     if not typed_corpus:
         return {}
 
+    workspace_texts = {
+        file_name: (ws / file_name).read_text(encoding="utf-8")
+        if (ws / file_name).exists()
+        else ""
+        for file_name in WORKSPACE_TARGETS
+    }
     promoted: dict[str, int] = {}
     for file_name in WORKSPACE_TARGETS:
         path = ws / file_name
-        existing = path.read_text(encoding="utf-8") if path.exists() else ""
+        existing = workspace_texts.get(file_name, "")
         try:
             candidates = await _extract_target_candidates_from_corpus(
                 client=client,
                 target_file=file_name,
                 corpus_text=typed_corpus,
                 existing_text=existing,
+                workspace_texts=workspace_texts,
             )
         except Exception:
             candidates = []
         try:
-            final_text = await _synthesize_workspace_file(client, file_name, existing, candidates)
+            final_text = await _synthesize_workspace_file(
+                client,
+                file_name,
+                existing,
+                candidates,
+                workspace_texts,
+            )
         except Exception:
             merged = _fallback_merge_lines(existing, candidates)
             final_text = _truncate_to_limit(merged, WORKSPACE_FILE_LIMIT) if merged else ""
@@ -728,6 +833,7 @@ async def promote_workspace(date_str: str) -> dict[str, int]:
 
         if final_text:
             path.write_text(final_text, encoding="utf-8")
+            workspace_texts[file_name] = final_text
             promoted[file_name] = len([ln for ln in final_text.splitlines() if ln.strip()])
 
     return promoted
