@@ -90,20 +90,21 @@ def _rows_from_query_result(result) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 async def do_recall(query: str, limit: int = 5) -> str:
-    """Search Graphiti and return <graphiti_memories> with facts (edges) and entities.
-    
-    Following the Zep paper approach:
-    - Retrieve most relevant edges (facts) with temporal validity
-    - Retrieve entity nodes (entity summaries)
-    - Format as context string for LLM
+    """Search Graphiti and return globally ranked mixed recall results.
+
+    Current desired behavior:
+    - retrieve both edges (facts) and nodes (entities)
+    - keep their original relative search order from Graphiti
+    - merge them into one candidate pool
+    - return only the global top-N mixed results
+    - do not apply temporal expiration filtering
     """
     from datetime import datetime, timezone
     from graphiti_core.search.search_config_recipes import COMBINED_HYBRID_SEARCH_RRF
     from graphiti_core.search.search_filters import SearchFilters
-    
+
     graphiti = create_graphiti()
-    
-    # Use Graphiti combined hybrid RRF recipe directly.
+
     search_limit = max(1, min(int(limit or RRF_RESULT_LIMIT), RRF_RESULT_LIMIT))
 
     cfg = COMBINED_HYBRID_SEARCH_RRF.model_copy(deep=True)
@@ -121,29 +122,22 @@ async def do_recall(query: str, limit: int = 5) -> str:
         return ""
 
     now = datetime.now(timezone.utc).isoformat()
-    now_dt = datetime.now(timezone.utc)
 
-    # Build facts from RRF-selected edges.
-    facts: list[dict] = []
-    seen_facts = set()
-    for edge in results.edges:
+    candidates: list[dict] = []
+    seen_facts: set[str] = set()
+    seen_entity_names: set[str] = set()
+
+    # Preserve Graphiti's returned order within each bucket, then rank globally
+    # by best available original position. This avoids separate post-truncation
+    # for facts/entities and gives a true global top-N mixed result set.
+    for idx, edge in enumerate(results.edges or []):
         fact = getattr(edge, 'fact', '').strip()
-        edge_uuid = getattr(edge, 'uuid', None)
-        source_uuid = getattr(edge, 'source_node_uuid', None)
-        target_uuid = getattr(edge, 'target_node_uuid', None)
-        valid_at = getattr(edge, 'valid_at', None)
-        invalid_at = getattr(edge, 'invalid_at', None)
-        
         if not fact or fact in seen_facts:
             continue
-        
-        # Skip expired edges (temporal filtering)
-        if invalid_at and invalid_at < now_dt:
-            continue
-        
         seen_facts.add(fact)
-        
-        # Format with date range as per paper
+
+        valid_at = getattr(edge, 'valid_at', None)
+        invalid_at = getattr(edge, 'invalid_at', None)
         date_range = ""
         if valid_at:
             valid_str = valid_at.strftime("%Y-%m-%d") if hasattr(valid_at, 'strftime') else str(valid_at)[:10]
@@ -153,85 +147,70 @@ async def do_recall(query: str, limit: int = 5) -> str:
             else:
                 date_range = f" (Date range: {valid_str} - present)"
 
-        facts.append({
-            'type': 'fact',
+        candidates.append({
+            'kind': 'fact',
+            'uuid': getattr(edge, 'uuid', None),
             'text': f"- {fact}{date_range}",
-            'uuid': edge_uuid,
-            'source_uuid': source_uuid,
-            'target_uuid': target_uuid,
+            'bucket_rank': idx + 1,
         })
 
-    # Keep top-N facts.
-    facts = facts[:search_limit]
-    for idx, item in enumerate(facts, start=1):
-        item['rrf_rank'] = idx
-
-    # Build entities from RRF-selected nodes directly.
-    entities: list[dict] = []
-    seen_entity_names: set[str] = set()
-    for node in results.nodes:
+    for idx, node in enumerate(results.nodes or []):
         name = getattr(node, 'name', '').strip()
-        summary = getattr(node, 'summary', '').strip()
-        node_uuid = getattr(node, 'uuid', None)
         if not name or name in seen_entity_names:
             continue
         seen_entity_names.add(name)
+
+        summary = getattr(node, 'summary', '').strip()
         text = f"- {name}"
         if summary:
             text += f": {summary}"
-        entities.append(
-            {
-                "uuid": node_uuid,
-                "text": text,
-            }
-        )
-    entities = entities[:search_limit]
 
-    if not facts and not entities:
+        candidates.append({
+            'kind': 'entity',
+            'uuid': getattr(node, 'uuid', None),
+            'text': text,
+            'bucket_rank': idx + 1,
+        })
+
+    if not candidates:
         return ""
 
-    # Log scores for debugging
+    # Global ranking: mix nodes and edges together by their original position in
+    # the Graphiti result buckets. Ties prefer facts first, then entities.
+    candidates.sort(key=lambda item: (item['bucket_rank'], 0 if item['kind'] == 'fact' else 1))
+    top_items = candidates[:search_limit]
+
+    facts = [item for item in top_items if item['kind'] == 'fact']
+    entities = [item for item in top_items if item['kind'] == 'entity']
+
     logger.info(
-        "Recall RRF top: %s",
-        {
-            "facts": [
-                (
-                    item['text'][:40],
-                    item['rrf_rank'],
-                )
-                for item in facts
-            ],
-            "entities": [
-                item['text'][:40]
-                for item in entities
-            ],
-        },
+        "Recall mixed top: %s",
+        [
+            {
+                'kind': item['kind'],
+                'bucket_rank': item['bucket_rank'],
+                'text': item['text'][:80],
+            }
+            for item in top_items
+        ],
     )
 
-    # Update query stats for returned facts
-    for item in facts:
-        if item['uuid']:
-            await _update_query_stats(item['uuid'], now)
+    for item in top_items:
+        if item.get('uuid'):
+            await _update_query_stats(str(item['uuid']), now)
 
-    for entity in entities:
-        if entity.get("uuid"):
-            await _update_query_stats(str(entity["uuid"]), now)
-    
-    # Build output in paper format with descriptive header
     output_parts = []
-    
-    # Add descriptive header
     output_parts.append("FACTS and ENTITIES represent relevant context to the current conversation.")
-    output_parts.append("These are the most relevant facts and their valid date ranges. If the fact is about an event, the event takes place during this time.")
-    output_parts.append("format: FACT (Date range: from - to)")
-    
+    output_parts.append("These are the most relevant recalled items for the current conversation.")
+    output_parts.append(f"Showing the global top {len(top_items)} mixed recall results.")
+
     if facts:
         output_parts.append("")
         output_parts.append("<FACTS>")
         for item in facts:
             output_parts.append(item['text'])
         output_parts.append("</FACTS>")
-    
+
     if entities:
         output_parts.append("")
         output_parts.append("These are the most relevant entities")
@@ -240,10 +219,7 @@ async def do_recall(query: str, limit: int = 5) -> str:
         for item in entities:
             output_parts.append(item['text'])
         output_parts.append("</ENTITIES>")
-    
-    if not facts and not entities:
-        return ""
-    
+
     return "\n".join(output_parts)
 
 async def _update_query_stats(uuid: str, timestamp: str):
