@@ -126,10 +126,11 @@ async def do_recall(query: str, limit: int = 5) -> str:
     candidates: list[dict] = []
     seen_facts: set[str] = set()
     seen_entity_names: set[str] = set()
+    edge_scores = list(getattr(results, 'edge_reranker_scores', []) or [])
+    node_scores = list(getattr(results, 'node_reranker_scores', []) or [])
 
-    # Preserve Graphiti's returned order within each bucket, then rank globally
-    # by best available original position. This avoids separate post-truncation
-    # for facts/entities and gives a true global top-N mixed result set.
+    # Build one mixed candidate pool using Graphiti's returned reranker/RRF
+    # scores, then sort globally across facts and entities.
     for idx, edge in enumerate(results.edges or []):
         fact = getattr(edge, 'fact', '').strip()
         if not fact or fact in seen_facts:
@@ -151,6 +152,7 @@ async def do_recall(query: str, limit: int = 5) -> str:
             'kind': 'fact',
             'uuid': getattr(edge, 'uuid', None),
             'text': f"- {fact}{date_range}",
+            'score': float(edge_scores[idx]) if idx < len(edge_scores) and edge_scores[idx] is not None else float('-inf'),
             'bucket_rank': idx + 1,
         })
 
@@ -169,25 +171,27 @@ async def do_recall(query: str, limit: int = 5) -> str:
             'kind': 'entity',
             'uuid': getattr(node, 'uuid', None),
             'text': text,
+            'score': float(node_scores[idx]) if idx < len(node_scores) and node_scores[idx] is not None else float('-inf'),
             'bucket_rank': idx + 1,
         })
 
     if not candidates:
         return ""
 
-    # Global ranking: mix nodes and edges together by their original position in
-    # the Graphiti result buckets. Ties prefer facts first, then entities.
-    candidates.sort(key=lambda item: (item['bucket_rank'], 0 if item['kind'] == 'fact' else 1))
+    # Global ranking by Graphiti-provided score. Ties fall back to original
+    # bucket order, then prefer facts before entities for stability.
+    candidates.sort(key=lambda item: (-item['score'], item['bucket_rank'], 0 if item['kind'] == 'fact' else 1))
     top_items = candidates[:search_limit]
 
     facts = [item for item in top_items if item['kind'] == 'fact']
     entities = [item for item in top_items if item['kind'] == 'entity']
 
     logger.info(
-        "Recall mixed top: %s",
+        "Recall mixed top by score: %s",
         [
             {
                 'kind': item['kind'],
+                'score': item['score'],
                 'bucket_rank': item['bucket_rank'],
                 'text': item['text'][:80],
             }
